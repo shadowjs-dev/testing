@@ -94,10 +94,10 @@
     "@testing-library/dom": "10.4.2",
     "@types/node": "^24.0.0",
     "happy-dom": "^21.0.3",
-    "tsdown": "0.23.0",
+    "tsdown": "0.23.1",
     "typescript": "7.0.2",
-    "vite": "8.3.3",
-    "vitest": "5.0.3"
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
   },
   "homepage": "https://testing.shadowjs.net",
   "keywords": [
