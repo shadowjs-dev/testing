@@ -92,7 +92,7 @@
     "@shadow-js/router": "^1.0.0",
     "@shadow-js/web": "^1.0.0",
     "@testing-library/dom": "10.4.2",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.5",
     "happy-dom": "^21.0.3",
     "tsdown": "0.23.0",
     "typescript": "7.0.2",
