@@ -1,0 +1,114 @@
+{
+  "name": "@shadow-js/testing",
+  "version": "1.0.0",
+  "description": "Testing helpers to render components, query the DOM like a user, fire events and test hooks",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "./dist/*/auto-cleanup.js",
+    "./dist/*/matchers.js"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/dev/index.d.ts",
+      "development": "./dist/dev/index.js",
+      "default": "./dist/prod/index.js"
+    },
+    "./dom": {
+      "types": "./dist/dev/dom.d.ts",
+      "development": "./dist/dev/dom.js",
+      "default": "./dist/prod/dom.js"
+    },
+    "./auto-cleanup": {
+      "types": "./dist/dev/auto-cleanup.d.ts",
+      "development": "./dist/dev/auto-cleanup.js",
+      "default": "./dist/prod/auto-cleanup.js"
+    },
+    "./matchers": {
+      "types": "./dist/dev/matchers.d.ts",
+      "development": "./dist/dev/matchers.js",
+      "default": "./dist/prod/matchers.js"
+    },
+    "./routes": {
+      "types": "./dist/dev/routes.d.ts",
+      "development": "./dist/dev/routes.js",
+      "default": "./dist/prod/routes.js"
+    },
+    "./playwright": {
+      "types": "./dist/dev/playwright.d.ts",
+      "development": "./dist/dev/playwright.js",
+      "default": "./dist/prod/playwright.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown --config-loader native",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test-types.json",
+    "typecheck:types": "tsc -p tsconfig.test-types.json",
+    "lint": "biome check .",
+    "test": "vitest run --project unit --project dom --project server",
+    "test:gc": "vitest run --project gc --passWithNoTests",
+    "test:perf": "vitest run --project perf --passWithNoTests",
+    "check": "npm run lint && npm run typecheck && npm run build && npm test && npm run test:perf && npm run test:gc"
+  },
+  "peerDependencies": {
+    "@shadow-js/core": "^1.0.0",
+    "@shadow-js/web": "^1.0.0",
+    "vitest": "^5.0.0",
+    "@shadow-js/router": "^1.0.0",
+    "@testing-library/dom": "^10.4.2",
+    "playwright-core": "^1.50.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    },
+    "@shadow-js/router": {
+      "optional": true
+    },
+    "@testing-library/dom": {
+      "optional": true
+    },
+    "playwright-core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@shadow-js/compiler": "^1.0.0",
+    "@shadow-js/core": "^1.0.0",
+    "@shadow-js/router": "^1.0.0",
+    "@shadow-js/web": "^1.0.0",
+    "@testing-library/dom": "10.4.2",
+    "@types/node": "^24.0.0",
+    "happy-dom": "^21.0.3",
+    "tsdown": "0.23.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.3",
+    "vitest": "5.0.3"
+  },
+  "homepage": "https://testing.shadowjs.net",
+  "keywords": [
+    "shadowjs",
+    "testing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shadowjs-dev/testing.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shadowjs-dev/testing/issues"
+  }
+}
