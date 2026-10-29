@@ -1,6 +1,6 @@
 {
   "name": "@shadow-js/testing",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Testing helpers to render components, query the DOM like a user, fire events and test hooks",
   "license": "MIT",
   "type": "module",
@@ -64,10 +64,10 @@
     "check": "npm run lint && npm run typecheck && npm run build && npm test && npm run test:perf && npm run test:gc"
   },
   "peerDependencies": {
-    "@shadow-js/core": "^1.0.1",
-    "@shadow-js/web": "^1.0.1",
+    "@shadow-js/core": "^1.0.2",
+    "@shadow-js/web": "^1.0.2",
     "vitest": "^5.0.0",
-    "@shadow-js/router": "^1.0.1",
+    "@shadow-js/router": "^1.0.2",
     "@testing-library/dom": "^10.4.2",
     "playwright-core": "^1.50.0"
   },
@@ -87,10 +87,10 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@shadow-js/compiler": "^1.0.1",
-    "@shadow-js/core": "^1.0.1",
-    "@shadow-js/router": "^1.0.1",
-    "@shadow-js/web": "^1.0.1",
+    "@shadow-js/compiler": "^1.0.2",
+    "@shadow-js/core": "^1.0.2",
+    "@shadow-js/router": "^1.0.2",
+    "@shadow-js/web": "^1.0.2",
     "@testing-library/dom": "10.4.2",
     "@types/node": "^24.0.0",
     "happy-dom": "^21.0.3",

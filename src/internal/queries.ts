@@ -22,7 +22,8 @@ type FindKey = Extract<keyof BoundQueries, `find${string}`>;
 
 /**
  * The `findBy*` and `findAllBy*` queries. They poll with the flushing {@link waitFor}, so a
- * pending effect is applied before each attempt. The generic element type parameter of
+ * pending effect is applied before each attempt, and under `vi.useFakeTimers()` each round advances
+ * the fake clock instead of waiting on it. The generic element type parameter of
  * Testing Library is not supported; the result is always an `HTMLElement` (or an array of them).
  * @since 1.0.0
  */
@@ -126,8 +127,9 @@ export type Queries = Omit<BoundQueries, FindKey> & FindQueries;
  */
 export function bindQueries(element: HTMLElement): Queries {
   const bound = getQueriesForElement(element);
+  // The caller's own `container` wins, as in Testing Library's `findBy*`.
   const later = <T>(query: () => T, wait?: waitForOptions): Promise<T> =>
-    waitFor(query, { ...wait, container: element });
+    waitFor(query, { container: element, ...wait });
   return {
     ...bound,
     findByText: (id, options, wait) => later(() => bound.getByText(id, options), wait),

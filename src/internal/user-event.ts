@@ -180,19 +180,32 @@ function isTabbable(element: HTMLElement): boolean {
   return !element.hasAttribute("disabled") && element.getAttribute("tabindex") !== "-1";
 }
 
-function tab(options: TabOptions = {}): void {
+/** The element Tab would focus next, or undefined when nothing can take focus. */
+function nextTabStop(backwards: boolean): HTMLElement | undefined {
   const focusable = Array.from(document.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
     isTabbable,
   );
-  if (focusable.length === 0) return;
+  if (focusable.length === 0) return undefined;
   const current = document.activeElement;
-  const backwards = options.shift === true;
   const index = current instanceof HTMLElement ? focusable.indexOf(current) : -1;
   let nextIndex: number;
   if (index === -1) nextIndex = backwards ? focusable.length - 1 : 0;
   else nextIndex = (index + (backwards ? -1 : 1) + focusable.length) % focusable.length;
-  const next = focusable[nextIndex];
+  return focusable[nextIndex];
+}
+
+/** Moves focus as a Tab press does once its keydown was not canceled. */
+function moveFocus(backwards: boolean): void {
+  const next = nextTabStop(backwards);
   if (next === undefined) return;
+  next.focus();
+  flushSync();
+}
+
+function tab(options: TabOptions = {}): void {
+  const backwards = options.shift === true;
+  if (nextTabStop(backwards) === undefined) return;
+  const current = document.activeElement;
   if (current instanceof HTMLElement) {
     const allowed = current.dispatchEvent(
       new KeyboardEvent("keydown", {
@@ -205,8 +218,7 @@ function tab(options: TabOptions = {}): void {
     );
     if (!allowed) return;
   }
-  next.focus();
-  flushSync();
+  moveFocus(backwards);
 }
 
 const NAMED_KEYS: Readonly<Record<string, string>> = {
@@ -298,10 +310,12 @@ function keyboard(text: string): void {
     }
     if (allowed && key === "Enter" && element instanceof HTMLButtonElement) element.click();
     if (allowed && key === " " && element instanceof HTMLButtonElement) element.click();
-    if (allowed && key === "Tab") {
-      tab({ shift: held.has("Shift") });
-    }
-    element.dispatchEvent(new KeyboardEvent("keyup", { ...flags(), key }));
+    // This loop already dispatched the keydown; `tab()` would dispatch a second one.
+    if (allowed && key === "Tab") moveFocus(held.has("Shift"));
+    // The browser sends the keyup of a Tab press to the element Tab moved focus to.
+    (key === "Tab" ? target() : element).dispatchEvent(
+      new KeyboardEvent("keyup", { ...flags(), key }),
+    );
     flushSync();
   }
   flushSync();

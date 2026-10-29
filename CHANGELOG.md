@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.2
+
+### Fixed
+
+- `render()` and `renderDirective()` remove the container or element they appended when the UI, the directive or its first effect throws (they leaked into the document), and `render({ hydrate: true })` without a `container` throws before it appends anything.
+- `userEvent.keyboard("{Tab}")` dispatches one `keydown` instead of two and sends the `keyup` to the element that received focus.
+- `toBeDisabled()` and `toBeEnabled()` apply to form controls and custom elements only (a `div` inside a disabled `fieldset` is not disabled) and spare the controls in the first `legend` of a disabled `fieldset`.
+- `waitFor` works with Vitest's fake timers (`vi.useFakeTimers()`): each poll advances the fake clock by one `interval` instead of waiting on a clock that never moves, and `timeout` counts fake milliseconds. It finds the fake clock on `setTimeout` itself, so nothing is imported from `vitest`.
+- `findBy*` and `findAllBy*` (on `screen`, `within` and a render result) and `waitForElementToBeRemoved` work with Vitest's fake timers like `waitFor`, and a `container` passed in their wait options now picks the DOM snapshot in the timeout error, as in Testing Library.
+- `startApp` takes `readyMatch` (text or pattern): the body of the `readyPath` answer must match it, so another process that took the port is not mistaken for the app. An app that ended while the probe was in flight is reported as ended, not ready.
+- `freePort` (and so `startApp`) picks a random port from 20000 up to 45000 that it can listen on on the given `host`, and never returns the same port twice in a process, instead of asking the system for port 0: the next ephemeral port is the pool every outbound socket draws from, so another connection could take it before the app started. It rejects at once with the listen error when the host cannot be bound, and after 64 busy ports with an error that names the range.
+
 ## 1.0.1
 
 ### Changed

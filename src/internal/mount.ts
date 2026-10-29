@@ -32,6 +32,16 @@ export interface Mounted {
  * @internal
  */
 export function mountView(ui: () => unknown, options: MountOptions = {}): Mounted {
+  // Checked before anything is appended, so a bad call leaves the document as it found it.
+  if (
+    options.hydrate !== undefined &&
+    options.hydrate !== false &&
+    options.container === undefined
+  ) {
+    throw new TypeError(
+      "render(): hydrate needs a container that already holds the server markup.",
+    );
+  }
   const baseElement = options.baseElement ?? options.container ?? document.body;
   const ownsContainer = options.container === undefined;
   const container = options.container ?? baseElement.appendChild(document.createElement("div"));
@@ -47,19 +57,18 @@ export function mountView(ui: () => unknown, options: MountOptions = {}): Mounte
               },
             }),
           );
-  if (
-    options.hydrate !== undefined &&
-    options.hydrate !== false &&
-    options.container === undefined
-  ) {
-    throw new TypeError(
-      "render(): hydrate needs a container that already holds the server markup.",
-    );
+  let dispose: () => void;
+  try {
+    dispose =
+      options.hydrate === undefined || options.hydrate === false
+        ? renderView(view, container)
+        : hydrateView(view, container, options.hydrate === true ? {} : options.hydrate);
+  } catch (error) {
+    // A component that throws while mounting never reaches `register`, so `cleanup()` could not
+    // remove the container this call appended; it would stay in the document for the next test.
+    if (ownsContainer) container.remove();
+    throw error;
   }
-  const dispose =
-    options.hydrate === undefined || options.hydrate === false
-      ? renderView(view, container)
-      : hydrateView(view, container, options.hydrate === true ? {} : options.hydrate);
   const unmount = register(() => {
     dispose();
     if (ownsContainer) container.remove();

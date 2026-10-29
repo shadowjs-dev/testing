@@ -75,15 +75,28 @@ export function renderDirective<A>(
       : document.body.appendChild(document.createElement(target ?? "div"));
   const owned = !(target instanceof HTMLElement);
   const [arg, setArg] = useSignal<A>(options.initialValue);
-  const made = createRoot((dispose) => {
-    directive(element, arg);
-    return dispose;
-  });
-  flushSync();
+  let made: () => void;
+  try {
+    made = createRoot((dispose) => {
+      directive(element, arg);
+      return dispose;
+    });
+  } catch (error) {
+    // createRoot already disposed the root; the element this call appended is ours to remove.
+    if (owned) element.remove();
+    throw error;
+  }
+  // Registered before the first flush: an effect that throws there must not leave a live root.
   const dispose = register(() => {
     made();
     if (owned) element.remove();
   });
+  try {
+    flushSync();
+  } catch (error) {
+    dispose();
+    throw error;
+  }
   return {
     element,
     arg,

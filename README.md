@@ -236,6 +236,9 @@ Testing Library's semantics, but every poll first flushes queued effects. Each q
 `findBy` and a `findAllBy` variant with the options and waitFor options as trailing arguments:
 `view.findByRole("button", { name: "Save" }, { timeout: 2000 })`.
 
+Under `vi.useFakeTimers()` they all work the same way: each poll advances the fake clock by one
+`interval`, and `timeout` counts fake milliseconds.
+
 ### `flush()`
 
 Awaits a few microtasks, then flushes. Use it after writes made outside an event, for example when

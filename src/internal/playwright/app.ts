@@ -46,6 +46,13 @@ export interface AppServerOptions {
    */
   readonly readyPath?: string | undefined;
   /**
+   * Proves that the answer comes from the app and not from another process that took the port: the body of the
+   * answer to `readyPath` must contain this text, or match this pattern (a health path or a page that serves a
+   * known token). Without it, any answer below status 500 counts as ready.
+   * @default undefined
+   */
+  readonly readyMatch?: string | RegExp | undefined;
+  /**
    * How long to wait for the first answer, in milliseconds.
    * @default 60000
    */
@@ -76,30 +83,62 @@ export interface RunningApp {
   stop(): Promise<{ readonly signal: NodeJS.Signals | null; readonly code: number | null }>;
 }
 
+/** Ports {@link freePort} already returned in this process (a test run uses a few hundred at most, so the set has no cap). */
+const handedOut = new Set<number>();
+/** Lowest port {@link freePort} tries: below the ephemeral range of Linux (32768) and macOS (49152). */
+const PORT_MIN = 20_000;
+/** Number of ports from {@link PORT_MIN} that {@link freePort} picks from. */
+const PORT_SPAN = 25_000;
+/** Attempts before {@link freePort} gives up, so the search always ends. */
+const PORT_ATTEMPTS = 64;
+
 /**
- * Finds a TCP port that nobody listens on at the moment: the system is asked for port 0, and the
- * probe socket is closed again. Another process could take the port before the caller uses it; the
- * window is a few milliseconds, and no port is fixed in advance.
+ * Tries to listen on `port` and closes again.
+ * @returns True when it listened, false when the port is taken or not allowed.
+ * @throws The listen error when the problem is the host (it cannot be bound at all), which no other port would fix.
+ */
+function canListen(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE" || error.code === "EACCES") resolve(false);
+      else reject(error);
+    });
+    probe.listen(port, host, () => {
+      probe.close((error) => (error === undefined ? resolve(true) : reject(error)));
+    });
+  });
+}
+
+/**
+ * Finds a TCP port that nobody listens on at the moment. A random port from 20000 up to (not including) 45000 is
+ * probed with a listen on `host` and closed again; it is never the same port twice in one process. Port 0 is not
+ * used because the system hands out the next ephemeral port, the pool every outbound socket draws from, so a parallel
+ * test or connection often took it before the server started. Another process could still take the port before the
+ * caller uses it; the window is a few milliseconds, and no port is fixed in advance.
  *
- * @param host The interface to probe.
+ * @param host The interface to probe; the port must be free there.
  * @returns The port.
- * @throws Error when the interface cannot be listened on (the promise rejects).
+ * @throws Error when the interface cannot be listened on (the promise rejects with the listen error), or when no
+ * free port was found in 64 attempts.
  * @example
  * import { freePort } from "@shadow-js/testing/playwright";
  *
  * const port = await freePort();
  * @since 1.0.0
  */
-export function freePort(host = "127.0.0.1"): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(0, host, () => {
-      const address = probe.address();
-      const port = typeof address === "object" && address !== null ? address.port : 0;
-      probe.close((error) => (error === undefined ? resolve(port) : reject(error)));
-    });
-  });
+export async function freePort(host = "127.0.0.1"): Promise<number> {
+  for (let attempt = 0; attempt < PORT_ATTEMPTS; attempt += 1) {
+    const port = PORT_MIN + Math.floor(Math.random() * PORT_SPAN);
+    if (handedOut.has(port)) continue;
+    if (await canListen(port, host)) {
+      handedOut.add(port);
+      return port;
+    }
+  }
+  throw new Error(
+    `freePort: no free port found in ${PORT_ATTEMPTS} attempts between ${PORT_MIN} and ${PORT_MIN + PORT_SPAN - 1}`,
+  );
 }
 
 /**
@@ -122,12 +161,20 @@ function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Asks the server once. Any answer below status 500 means it is serving. */
-async function answers(url: string): Promise<boolean> {
+/**
+ * Asks the server once. Any answer below status 500 means it is serving; with `match`, the body must also contain the
+ * text or match the pattern, because the answer must come from the app itself.
+ */
+async function answers(url: string, match: string | RegExp | undefined): Promise<boolean> {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(2_000), redirect: "manual" });
-    await response.body?.cancel();
-    return response.status < 500;
+    if (match === undefined) {
+      await response.body?.cancel();
+      return response.status < 500;
+    }
+    const body = await response.text();
+    if (response.status >= 500) return false;
+    return typeof match === "string" ? body.includes(match) : new RegExp(match).test(body);
   } catch {
     return false;
   }
@@ -233,11 +280,17 @@ export async function startApp(options: AppServerOptions): Promise<RunningApp> {
     if (ended) {
       throw new Error(`${options.command} ended before it answered on ${url}:\n${output}`);
     }
-    if (await answers(target)) break;
+    if (await answers(target, options.readyMatch)) {
+      // The process may have ended while the probe was in flight (it lost the port): an answer is then not its own.
+      if (ended) {
+        throw new Error(`${options.command} ended before it answered on ${url}:\n${output}`);
+      }
+      break;
+    }
     if (Date.now() >= deadline) {
       await stop();
       throw new Error(
-        `${options.command} did not answer on ${url} within ${startTimeout} ms:\n${output}`,
+        `${options.command} did not answer ${options.readyMatch === undefined ? "" : "as the app "}on ${url} within ${startTimeout} ms:\n${output}`,
       );
     }
     await pause(PROBE_INTERVAL);

@@ -40,6 +40,26 @@ describe("freePort", () => {
       await new Promise((resolve) => holder.close(resolve));
     }
   });
+
+  it("[TST-PW-28] never returns a port twice, even when each one was released at once, and each can be listened on", async () => {
+    const seen = new Set<number>();
+    for (let index = 0; index < 50; index += 1) {
+      const port = await freePort();
+      expect(seen.has(port)).toBe(false);
+      seen.add(port);
+      const probe = createServer();
+      await new Promise<void>((resolve, reject) => {
+        probe.once("error", reject);
+        probe.listen(port, "127.0.0.1", resolve);
+      });
+      await new Promise((resolve) => probe.close(resolve));
+    }
+    expect(seen.size).toBe(50);
+  });
+
+  it("[TST-PW-29] rejects with the listen error when the host cannot be bound, instead of retrying other ports", async () => {
+    await expect(freePort("192.0.2.1")).rejects.toMatchObject({ code: "EADDRNOTAVAIL" });
+  });
 });
 
 describe("expandPlaceholders", () => {
@@ -145,6 +165,36 @@ describe("startApp", () => {
       expect((await fetch(app.url)).status).toBe(404);
     } finally {
       await app.stop();
+    }
+  });
+});
+
+describe("startApp: identity of the answering server", () => {
+  const BODY_SERVER = (body: string): string => `
+    require("node:http").createServer((q, r) => r.end(${JSON.stringify(body)})).listen(Number(process.env.PORT), process.env.HOST);
+    process.on("SIGINT", () => process.exit(0));`;
+
+  it("[UI-R5-7] with readyMatch, an answer that is not the app's (another process on the port) is not ready", async () => {
+    await expect(
+      startApp(
+        serverOptions(BODY_SERVER("some other service"), {
+          readyMatch: "shadow-app-token",
+          startTimeout: 400,
+        }),
+      ),
+    ).rejects.toThrow(/did not answer as the app on http:\/\/127\.0\.0\.1:\d+ within 400 ms/);
+  });
+
+  it("[UI-R5-7] with readyMatch, the app whose body holds the token (a string or a pattern) is ready", async () => {
+    for (const readyMatch of ["shadow-app-token", /shadow-app-\w+/]) {
+      const app = await startApp(
+        serverOptions(BODY_SERVER("ok shadow-app-token ok"), { readyMatch }),
+      );
+      try {
+        expect(await (await fetch(app.url)).text()).toContain("shadow-app-token");
+      } finally {
+        await app.stop();
+      }
     }
   });
 });

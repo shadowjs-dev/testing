@@ -64,9 +64,17 @@ const DISABLEABLE = new Set([
 ]);
 
 function isDisabled(element: Element): boolean {
+  // Only a form control (or a custom element) can be disabled; a div inside a disabled fieldset is not.
+  if (!DISABLEABLE.has(element.tagName) && !element.tagName.includes("-")) return false;
   if (DISABLEABLE.has(element.tagName) && element.hasAttribute("disabled")) return true;
+  let child: Element = element;
   for (let node = element.parentElement; node !== null; node = node.parentElement) {
-    if (node.tagName === "FIELDSET" && node.hasAttribute("disabled")) return true;
+    if (node.tagName === "FIELDSET" && node.hasAttribute("disabled")) {
+      // The controls in the fieldset's first legend stay enabled, as in a browser.
+      const legend = Array.from(node.children).find((entry) => entry.tagName === "LEGEND");
+      if (legend === undefined || legend !== child) return true;
+    }
+    child = node;
   }
   return false;
 }
