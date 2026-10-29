@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3
+
+### Fixed
+
+- `userEvent.type`, `clear`, `keyboard` and `selectOptions` do nothing on disabled controls, read-only fields and disabled options (no value change, no input events).
+- `userEvent.click`, `pointer`, `dblClick` and `tab` use the matchers' disabled check (disabled fieldset ancestry); a stray `disabled` attribute on a `div` no longer blocks a click.
+- `toHaveStyle("...")` splits declarations outside quotes and parentheses and at the first `:`, and throws a `TypeError` for a declaration or text that does not parse.
+- `toBeVisible` treats `opacity: 0` and the content of a closed `<details>` (other than its `<summary>`) as hidden.
+- `toHaveTextContent("")` passes only for an element with no text.
+- `toHaveTextContent`, `toHaveAccessibleName` and `toHaveAccessibleDescription` give the same answer on every call for a `g` or `y` regular expression.
+
 ## 1.0.2
 
 ### Fixed

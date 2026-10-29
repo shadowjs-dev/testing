@@ -1,4 +1,5 @@
 import { flushSync } from "@shadow-js/core";
+import { isDisabled } from "./matchers";
 
 /** Selector for elements that can take keyboard focus, before the disabled and tabindex checks. */
 const FOCUSABLE =
@@ -53,17 +54,20 @@ export interface UserEvent {
   /**
    * Focuses a text field and types each character: keydown, then (unless the keydown was canceled)
    * the value update and an input event, then keyup. Effects are flushed after each character.
+   * A disabled field (or one in a disabled fieldset) receives nothing; a read-only one gets the key
+   * events but keeps its value, as in a browser.
    * @throws {TypeError} When `element` is not an `input` or `textarea`.
    */
   type(element: Element, text: string): void;
   /**
    * Focuses a text field, empties it, and dispatches an input event of type `deleteContentBackward`.
+   * A disabled or read-only field is left as it is, with no event.
    * @throws {TypeError} When `element` is not an `input` or `textarea`.
    */
   clear(element: Element): void;
   /**
-   * Pointer down, mouse down, focus, pointer up, mouse up, then click. An element with the `disabled`
-   * attribute receives none of these events.
+   * Pointer down, mouse down, focus, pointer up, mouse up, then click. A disabled form control, or one
+   * inside a disabled fieldset (except in its first legend), receives none of these events.
    */
   click(element: Element): void;
   /**
@@ -88,7 +92,8 @@ export interface UserEvent {
   dblClick(element: Element): void;
   /**
    * Selects, for each entry of `values`, the first option whose value or text equals it, then
-   * dispatches input and change. In a single select the last entry wins.
+   * dispatches input and change. In a single select the last entry wins. A disabled option (or one in
+   * a disabled optgroup) is skipped, and a disabled select, or one with nothing left to select, gets no event.
    * @throws {TypeError} When `element` is not a `select`.
    * @throws {Error} When an entry matches no option.
    */
@@ -125,6 +130,7 @@ function dispatchInput(element: TextField, data: string | null, inputType: strin
 
 function type(element: Element, text: string): void {
   const field = requireTextField(element, "type");
+  if (isDisabled(field)) return;
   field.focus();
   for (const character of text) {
     const allowed = field.dispatchEvent(
@@ -136,7 +142,7 @@ function type(element: Element, text: string): void {
       }),
     );
     // A keydown that calls preventDefault stops the character from being inserted.
-    if (allowed) {
+    if (allowed && !field.readOnly) {
       field.value = `${field.value}${character}`;
       dispatchInput(field, character, "insertText");
       flushSync();
@@ -150,6 +156,7 @@ function type(element: Element, text: string): void {
 
 function clear(element: Element): void {
   const field = requireTextField(element, "clear");
+  if (isDisabled(field) || field.readOnly) return;
   field.focus();
   field.value = "";
   dispatchInput(field, null, "deleteContentBackward");
@@ -164,7 +171,7 @@ function pointerEventOf(type: string, init: MouseEventInit & { pointerType?: str
 }
 
 function click(element: Element): void {
-  if (element.hasAttribute("disabled")) return;
+  if (isDisabled(element)) return;
   const init = { bubbles: true, cancelable: true, composed: true, pointerType: "mouse" };
   element.dispatchEvent(pointerEventOf("pointerdown", init));
   element.dispatchEvent(new MouseEvent("mousedown", init));
@@ -177,7 +184,7 @@ function click(element: Element): void {
 }
 
 function isTabbable(element: HTMLElement): boolean {
-  return !element.hasAttribute("disabled") && element.getAttribute("tabindex") !== "-1";
+  return !isDisabled(element) && element.getAttribute("tabindex") !== "-1";
 }
 
 /** The element Tab would focus next, or undefined when nothing can take focus. */
@@ -299,7 +306,7 @@ function keyboard(text: string): void {
     }
     const element = target();
     const allowed = element.dispatchEvent(new KeyboardEvent("keydown", { ...flags(), key }));
-    if (allowed && isTextField(element)) {
+    if (allowed && isTextField(element) && !isDisabled(element) && !element.readOnly) {
       if (key === "Backspace") {
         element.value = element.value.slice(0, -1);
         dispatchInput(element, null, "deleteContentBackward");
@@ -308,8 +315,9 @@ function keyboard(text: string): void {
         dispatchInput(element, key, "insertText");
       }
     }
-    if (allowed && key === "Enter" && element instanceof HTMLButtonElement) element.click();
-    if (allowed && key === " " && element instanceof HTMLButtonElement) element.click();
+    if (allowed && (key === "Enter" || key === " ") && element instanceof HTMLButtonElement) {
+      if (!isDisabled(element)) element.click();
+    }
     // This loop already dispatched the keydown; `tab()` would dispatch a second one.
     if (allowed && key === "Tab") moveFocus(held.has("Shift"));
     // The browser sends the keyup of a Tab press to the element Tab moved focus to.
@@ -351,14 +359,14 @@ function pointer(input: PointerStep | readonly PointerStep[]): void {
           ? new PointerEvent(type, base)
           : new MouseEvent(type, base);
       const down = (): void => {
-        if (current?.hasAttribute("disabled")) return;
+        if (current !== undefined && isDisabled(current)) return;
         current?.dispatchEvent(pointerEvent("pointerdown"));
         if (!touch) current?.dispatchEvent(new MouseEvent("mousedown", base));
         if (current instanceof HTMLElement) current.focus();
         pressed.add(name);
       };
       const up = (): void => {
-        if (current?.hasAttribute("disabled")) {
+        if (current !== undefined && isDisabled(current)) {
           pressed.delete(name);
           return;
         }
@@ -421,11 +429,21 @@ function selectOptions(element: Element, values: string | readonly string[]): vo
   }
   const wanted = typeof values === "string" ? [values] : [...values];
   const options = Array.from(element.options);
+  const chosen: HTMLOptionElement[] = [];
   for (const want of wanted) {
     const option = options.find((o) => o.value === want || o.textContent === want);
     if (option === undefined) throw new Error(`userEvent.selectOptions(): no option "${want}".`);
-    option.selected = true;
+    // A browser cannot select a disabled option, or any option of a disabled select or optgroup.
+    if (
+      isDisabled(option) ||
+      isDisabled(element) ||
+      option.parentElement?.matches("optgroup[disabled]")
+    )
+      continue;
+    chosen.push(option);
   }
+  if (chosen.length === 0) return;
+  for (const option of chosen) option.selected = true;
   element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
   flushSync();

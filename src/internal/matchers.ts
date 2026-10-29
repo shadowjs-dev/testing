@@ -45,6 +45,56 @@ export interface ClassOptions {
 
 const normalize = (text: string): string => text.replace(/\s+/g, " ").trim();
 
+/**
+ * Tests `text` against `pattern` on a copy, so a `g` or `y` flag cannot carry a `lastIndex` from one call to the next (which
+ * would make the same assertion pass and then fail).
+ * @internal
+ */
+export function testPattern(pattern: RegExp, text: string): boolean {
+  return new RegExp(pattern.source, pattern.flags).test(text);
+}
+
+/**
+ * Splits CSS declarations at the `;` that end them, not at the ones inside quotes or parentheses (`url(data:...;base64,...)`),
+ * and each declaration at its first `:`. A declaration that has no property or no value throws, as does an empty text: either
+ * would compare nothing and pass.
+ */
+function parseDeclarations(text: string): [string, string][] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote = "";
+  let start = 0;
+  for (let at = 0; at < text.length; at += 1) {
+    const char = text.charAt(at);
+    if (quote !== "") {
+      if (char === "\\") at += 1;
+      else if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "(") depth += 1;
+    else if (char === ")" && depth > 0) depth -= 1;
+    else if (char === ";" && depth === 0) {
+      parts.push(text.slice(start, at));
+      start = at + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  const declarations: [string, string][] = [];
+  for (const part of parts) {
+    if (part.trim() === "") continue;
+    const colon = part.indexOf(":");
+    const property = colon === -1 ? "" : part.slice(0, colon).trim();
+    const value = colon === -1 ? "" : part.slice(colon + 1).trim();
+    if (property === "" || value === "")
+      throw new TypeError(
+        `toHaveStyle: "${part.trim()}" is not a CSS declaration ("property: value").`,
+      );
+    declarations.push([property, value]);
+  }
+  if (declarations.length === 0)
+    throw new TypeError("toHaveStyle: the style text holds no declaration to compare.");
+  return declarations;
+}
+
 /** Throws a `TypeError` unless `value` is a DOM node. @internal */
 export function nodeOf(value: unknown, matcher: string): Element {
   if (value instanceof Element) return value;
@@ -63,7 +113,8 @@ const DISABLEABLE = new Set([
   "FIELDSET",
 ]);
 
-function isDisabled(element: Element): boolean {
+/** Whether a browser treats the element as disabled: its own attribute or a disabled fieldset around it. @internal */
+export function isDisabled(element: Element): boolean {
   // Only a form control (or a custom element) can be disabled; a div inside a disabled fieldset is not.
   if (!DISABLEABLE.has(element.tagName) && !element.tagName.includes("-")) return false;
   if (DISABLEABLE.has(element.tagName) && element.hasAttribute("disabled")) return true;
@@ -81,11 +132,22 @@ function isDisabled(element: Element): boolean {
 
 function isVisible(element: Element): boolean {
   if (!element.isConnected) return false;
+  let previous: Element | null = null;
   for (let node: Element | null = element; node !== null; node = node.parentElement) {
     if (node.hasAttribute("hidden")) return false;
     const style = node.ownerDocument.defaultView?.getComputedStyle(node);
     if (style?.display === "none") return false;
     if (style?.visibility === "hidden" || style?.visibility === "collapse") return false;
+    // As in jest-dom: a fully transparent element hides what it holds, and a closed <details> hides all but its summary.
+    if (style?.opacity === "0") return false;
+    if (
+      previous !== null &&
+      node.tagName === "DETAILS" &&
+      previous.tagName !== "SUMMARY" &&
+      !node.hasAttribute("open")
+    )
+      return false;
+    previous = node;
   }
   return true;
 }
@@ -124,7 +186,13 @@ export const matchers = {
     const element = nodeOf(actual, "toHaveTextContent");
     const raw = element.textContent ?? "";
     const text = options.normalizeWhitespace === false ? raw : normalize(raw);
-    const pass = typeof expected === "string" ? text.includes(expected) : expected.test(text);
+    // "" is contained in every text, so it would always pass: it means "no text" here.
+    const pass =
+      typeof expected === "string"
+        ? expected === ""
+          ? text === ""
+          : text.includes(expected)
+        : testPattern(expected, text);
     return {
       pass,
       message: () =>
@@ -242,10 +310,7 @@ export const matchers = {
     const view = element.ownerDocument.defaultView?.getComputedStyle(element);
     const wanted: [string, string][] =
       typeof expected === "string"
-        ? expected
-            .split(";")
-            .map((declaration) => declaration.split(":").map((part) => part.trim()))
-            .filter((parts): parts is [string, string] => parts.length === 2 && parts[0] !== "")
+        ? parseDeclarations(expected)
         : Object.entries(expected).map(([key, value]) => [kebab(key), value]);
     const mismatches = wanted.filter(([property, value]) => {
       const inline = element instanceof HTMLElement ? element.style.getPropertyValue(property) : "";

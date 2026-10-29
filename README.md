@@ -32,7 +32,7 @@ published, install it from this repository.
 | `@shadow-js/testing` | stores, hooks and async helpers, with no DOM |
 | `@shadow-js/testing/dom` | rendering, queries (`within`, `findBy*`), `fireEvent`, `userEvent`, `prettyDOM`, `logRoles` |
 | `@shadow-js/testing/auto-cleanup` | unmounts after each test |
-| `@shadow-js/testing/matchers` | the jest-dom matchers, registered with vitest's `expect` (the accessible-name matchers are `accessibleMatchers` in `dom`) |
+| `@shadow-js/testing/matchers` | the jest-dom matchers, registered with vitest's `expect` (the accessible-name matchers are `accessibleMatchers` in `dom`). `toHaveStyle("...")` throws a `TypeError` for a declaration that is not `property: value`; `toBeVisible` treats `opacity: 0` and the body of a closed `<details>` as hidden; `toHaveTextContent("")` passes only for an element with no text |
 | `@shadow-js/testing/routes` | `createRoutesStub`: route components over a memory router (needs `@shadow-js/router`) |
 | `@shadow-js/testing/playwright` | helpers for tests in a real browser: `waitForHydration`, `collectProblems`, `clientNavigate`, `startApp`, `createTest` (Node; needs Playwright) |
 
@@ -225,7 +225,10 @@ Synchronous and simplified:
   dispatches input, flushes, dispatches keyup. Throws a `TypeError` for elements that are not an
   `input` or `textarea`.
 - `clear(field)` empties the field and dispatches input.
-- `click(el)` dispatches pointer down and up, focuses, and clicks. Disabled elements get nothing.
+- A disabled field (or one in a disabled fieldset) gets nothing from `type`, `clear`, `keyboard` or
+  `click`; a read-only one keeps its value. `selectOptions` skips disabled options.
+- `click(el)` dispatches pointer down and up, focuses, and clicks. Disabled controls, including those
+  in a disabled fieldset, get nothing.
 - `tab({ shift? })` moves focus through the focusable elements in document order, skipping disabled
   ones and wrapping around.
 

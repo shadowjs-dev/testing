@@ -6,7 +6,7 @@
  * @packageDocumentation
  */
 import { getRoles, queryAllByRole } from "@testing-library/dom";
-import { type MatcherResult, nodeOf } from "./matchers";
+import { type MatcherResult, nodeOf, testPattern } from "./matchers";
 
 /** The accessible name and description of an element, as Testing Library computes them. */
 function accessibleFacts(element: Element): { name: string; description: string } | undefined {
@@ -68,7 +68,7 @@ export const accessibleMatchers = {
         ? name !== ""
         : typeof expected === "string"
           ? name === expected
-          : expected.test(name);
+          : testPattern(expected, name);
     return {
       pass,
       message: () =>
@@ -84,7 +84,7 @@ export const accessibleMatchers = {
         ? description !== ""
         : typeof expected === "string"
           ? description === expected
-          : expected.test(description);
+          : testPattern(expected, description);
     return {
       pass,
       message: () =>
