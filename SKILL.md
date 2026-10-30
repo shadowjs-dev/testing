@@ -5,7 +5,7 @@ description: "Work with @shadow-js/testing. Testing helpers to render components
 
 # @shadow-js/testing
 
-Version 1.0.3. Testing helpers to render components, query the DOM like a user, fire events and test hooks.
+Version 1.0.4. Testing helpers to render components, query the DOM like a user, fire events and test hooks.
 
 ## Where to read more
 
@@ -23,10 +23,10 @@ npm install -D @shadow-js/testing @shadow-js/core @shadow-js/web
 
 | Package | Range | Required |
 | --- | --- | --- |
-| `@shadow-js/core` | `^1.0.3` | yes |
-| `@shadow-js/web` | `^1.0.3` | yes |
+| `@shadow-js/core` | `^1.0.4` | yes |
+| `@shadow-js/web` | `^1.0.4` | yes |
 | `vitest` | `^5.0.0` | no |
-| `@shadow-js/router` | `^1.0.3` | no |
+| `@shadow-js/router` | `^1.0.4` | no |
 | `@testing-library/dom` | `^10.4.2` | no |
 | `playwright-core` | `^1.50.0` | no |
 

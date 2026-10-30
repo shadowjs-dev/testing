@@ -22,8 +22,6 @@ npm install -D @shadow-js/testing vitest happy-dom @testing-library/dom
 `@shadow-js/core` and `@shadow-js/web` are peer dependencies; `vitest` is an optional peer
 dependency, needed by the `auto-cleanup` entry. `@testing-library/dom` is an optional peer too, and the
 `dom` entry imports it, so install it with the package (npm does not install optional peers for you).
-ShadowJS 1.0.0 is not on npm yet. Until it is
-published, install it from this repository.
 
 ## Entries
 
@@ -321,10 +319,10 @@ See the [testing guide](https://shadowjs.net/guides/testing/) for a complete set
 ## Dependencies
 
 - Runtime: none.
-- Peers: `@shadow-js/core` and `@shadow-js/web` `^1.0.0`: the runtime the test helpers render with.
+- Peers: `@shadow-js/core` and `@shadow-js/web` `^1.0.3`: the runtime the test helpers render with.
 - Optional peers: `vitest` `^5.0.0` for `expect` and `afterEach` (`src/matchers.ts`, `src/auto-cleanup.ts`).
 - Optional peers: `@testing-library/dom` `^10.4.2` for accessible matchers in `@shadow-js/testing/dom`.
-- Optional peers: `@shadow-js/router` `^1.0.0` for route rendering in the `routes` entry (`src/routes.ts`).
+- Optional peers: `@shadow-js/router` `^1.0.3` for route rendering in the `routes` entry (`src/routes.ts`).
 - Optional peers: `playwright-core` `^1.50.0` (or `@playwright/test`, which includes it) for the `playwright` entry. The entry imports neither: it types the parts of `Page` it uses, so any Playwright version with those members works.
 
 ## Types
