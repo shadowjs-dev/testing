@@ -53,7 +53,9 @@ export interface TabOptions {
 export interface UserEvent {
   /**
    * Focuses a text field and types each character: keydown, then (unless the keydown was canceled)
-   * the value update and an input event, then keyup. Effects are flushed after each character.
+   * a cancelable beforeinput, the value update and an input event, then keyup. Effects are flushed after each
+   * character. Text past
+   * the field's `maxlength` is dropped, as a browser drops it.
    * A disabled field (or one in a disabled fieldset) receives nothing; a read-only one gets the key
    * events but keeps its value, as in a browser.
    * @throws {TypeError} When `element` is not an `input` or `textarea`.
@@ -72,7 +74,8 @@ export interface UserEvent {
   click(element: Element): void;
   /**
    * Moves focus to the next focusable element in document order, or to the previous one with `shift`,
-   * wrapping around at the ends. A keydown for Tab goes to the focused element first; a canceled
+   * wrapping around at the ends. Disabled elements, `tabindex="-1"` ones, and anything hidden (`hidden`,
+   * `display: none`, `visibility: hidden`) or inert is skipped. A keydown for Tab goes to the focused element first; a canceled
    * keydown keeps focus where it is. Without options, focus moves forward (`shift` defaults to false).
    */
   tab(options?: TabOptions): void;
@@ -80,7 +83,10 @@ export interface UserEvent {
    * Types into the focused element. `{Enter}`, `{Escape}`, `{Backspace}`, `{Delete}`, `{Tab}`,
    * `{Space}`, `{ArrowUp}`, `{ArrowDown}`, `{ArrowLeft}`, `{ArrowRight}`, `{Home}` and `{End}` press
    * that key; `{Shift}`, `{Control}`, `{Alt}` and `{Meta}` hold a modifier for the keys after them
-   * (`{/Shift}` releases it); `{{` and `[[` are literal braces and brackets.
+   * (`{/Shift}` releases it); `{{` and `[[` are literal braces and brackets. As in a browser, text stops
+   * at `maxlength` and goes only into controls that take text; Enter in a textarea breaks the line, and Enter
+   * in a text field of a form clicks the form's default submit button (or submits a form that has a single text
+   * field and no button); Enter clicks a button or a summary, and Space also toggles a checkbox or selects a radio.
    * @throws {SyntaxError} For an unclosed `{`, an unknown `{Name}`, or a `{/Name}` that is not a modifier.
    */
   keyboard(text: string): void;
@@ -122,6 +128,51 @@ function requireTextField(element: Element, method: string): TextField {
   return element;
 }
 
+/**
+ * What a field shows while its `value` is sanitized: a number input reports `""` for the "-" a user has
+ * typed so far, and typing "5" next must give "-5", not "5". The text typed so far is remembered with the
+ * value the field reported for it, so an edit made by anything else (a script, `clear`) is told apart.
+ */
+const typedText = new WeakMap<TextField, { readonly raw: string; readonly shown: string }>();
+
+function currentText(field: TextField): string {
+  const known = typedText.get(field);
+  return known !== undefined && known.shown === field.value ? known.raw : field.value;
+}
+
+function setText(field: TextField, text: string): void {
+  field.value = text;
+  typedText.set(field, { raw: text, shown: field.value });
+}
+
+/**
+ * Whether typing one more character changes the value: a browser refuses text past `maxlength`
+ * (counted in UTF-16 units, as `value.length` is) and fires no input event for it.
+ */
+function hasRoom(field: TextField): boolean {
+  return field.maxLength < 0 || currentText(field).length < field.maxLength;
+}
+
+/**
+ * One edit as a browser makes it: a cancelable `beforeinput`, then (unless it was canceled) the new text and
+ * an `input` event. Nothing happens, and no event fires, when there is nothing to delete.
+ */
+function edit(field: TextField, next: string, data: string | null, inputType: string): void {
+  if (next === currentText(field) && inputType === "deleteContentBackward") return;
+  const proceed = field.dispatchEvent(
+    new InputEvent("beforeinput", {
+      data,
+      inputType,
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    }),
+  );
+  if (!proceed) return;
+  setText(field, next);
+  dispatchInput(field, data, inputType);
+}
+
 function dispatchInput(element: TextField, data: string | null, inputType: string): void {
   element.dispatchEvent(
     new InputEvent("input", { data, inputType, bubbles: true, composed: true }),
@@ -142,9 +193,8 @@ function type(element: Element, text: string): void {
       }),
     );
     // A keydown that calls preventDefault stops the character from being inserted.
-    if (allowed && !field.readOnly) {
-      field.value = `${field.value}${character}`;
-      dispatchInput(field, character, "insertText");
+    if (allowed && !field.readOnly && acceptsText(field) && hasRoom(field)) {
+      edit(field, `${currentText(field)}${character}`, character, "insertText");
       flushSync();
     }
     field.dispatchEvent(
@@ -158,7 +208,18 @@ function clear(element: Element): void {
   const field = requireTextField(element, "clear");
   if (isDisabled(field) || field.readOnly) return;
   field.focus();
+  const proceed = field.dispatchEvent(
+    new InputEvent("beforeinput", {
+      data: null,
+      inputType: "deleteContentBackward",
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+    }),
+  );
+  if (!proceed) return;
   field.value = "";
+  typedText.delete(field);
   dispatchInput(field, null, "deleteContentBackward");
   flushSync();
 }
@@ -183,8 +244,33 @@ function click(element: Element): void {
   flushSync();
 }
 
+/**
+ * Whether a browser would render the element so that it can take focus: no `inert` or `display: none`
+ * on it or an ancestor (the `hidden` attribute is `display: none` in the user agent style sheet), and not
+ * `visibility: hidden`.
+ */
+function isFocusableHere(element: HTMLElement): boolean {
+  const view = element.ownerDocument.defaultView;
+  for (let node: Element | null = element; node !== null; node = node.parentElement) {
+    if (node.hasAttribute("inert")) return false;
+    // happy-dom has no user agent style sheet, so `hidden` is read from the attribute unless the element's own
+    // style says otherwise.
+    const hiddenAttribute =
+      node.hasAttribute("hidden") &&
+      node.getAttribute("hidden") !== "until-found" &&
+      !(node instanceof HTMLElement && node.style.display !== "");
+    if (hiddenAttribute) return false;
+    if (view !== null && view.getComputedStyle(node).display === "none") return false;
+  }
+  if (view === null) return true;
+  const visibility = view.getComputedStyle(element).visibility;
+  return visibility !== "hidden" && visibility !== "collapse";
+}
+
 function isTabbable(element: HTMLElement): boolean {
-  return !isDisabled(element) && element.getAttribute("tabindex") !== "-1";
+  return (
+    !isDisabled(element) && element.getAttribute("tabindex") !== "-1" && isFocusableHere(element)
+  );
 }
 
 /** The element Tab would focus next, or undefined when nothing can take focus. */
@@ -271,6 +357,83 @@ function keyTokens(text: string): Array<{ kind: "key" | "down" | "up"; name: str
   return tokens;
 }
 
+/** Input types that take no typed text: a key press on them edits nothing. */
+const NO_TEXT_TYPES: ReadonlySet<string> = new Set([
+  "button",
+  "checkbox",
+  "color",
+  "file",
+  "hidden",
+  "image",
+  "radio",
+  "range",
+  "reset",
+  "submit",
+]);
+
+/** Whether typed characters go into the field (not a checkbox, a radio, a button, a color picker...). */
+function acceptsText(field: TextField): boolean {
+  return field instanceof HTMLTextAreaElement || !NO_TEXT_TYPES.has(field.type);
+}
+
+/**
+ * What a key press does to the focused control besides typing: Enter clicks a button, a button-like input and a
+ * summary; Space also toggles a checkbox and selects a radio. (A browser clicks on the key up for Space; the
+ * click is the same.)
+ */
+function activateByKey(element: Element, key: string): void {
+  if ((key !== "Enter" && key !== " ") || isDisabled(element)) return;
+  if (element instanceof HTMLButtonElement) {
+    element.click();
+  } else if (element instanceof HTMLInputElement) {
+    const buttonLike = ["button", "submit", "reset", "image"].includes(element.type);
+    const toggle = key === " " && (element.type === "checkbox" || element.type === "radio");
+    if (buttonLike || toggle) element.click();
+  } else if (element.localName === "summary" && element instanceof HTMLElement) {
+    element.click();
+  }
+}
+
+/** Input types a browser counts as text fields for implicit form submission. */
+const IMPLICIT_SUBMIT_TYPES: ReadonlySet<string> = new Set([
+  "text",
+  "search",
+  "url",
+  "tel",
+  "email",
+  "password",
+  "date",
+  "month",
+  "week",
+  "time",
+  "datetime-local",
+  "number",
+]);
+
+/**
+ * What Enter does in a text field of a form (HTML "implicit submission"): it clicks the form's default
+ * button (the first submit button), or, when there is none, submits a form that has one text field at most.
+ * A disabled default button blocks the submission.
+ */
+function implicitSubmit(field: HTMLInputElement): void {
+  const form = field.form;
+  if (form === null || !IMPLICIT_SUBMIT_TYPES.has(field.type)) return;
+  const defaultButton = Array.from(form.elements).find(
+    (control): control is HTMLButtonElement | HTMLInputElement =>
+      (control instanceof HTMLButtonElement && control.type === "submit") ||
+      (control instanceof HTMLInputElement &&
+        (control.type === "submit" || control.type === "image")),
+  );
+  if (defaultButton !== undefined) {
+    if (!isDisabled(defaultButton)) defaultButton.click();
+    return;
+  }
+  const blocking = Array.from(form.elements).filter(
+    (control) => control instanceof HTMLInputElement && IMPLICIT_SUBMIT_TYPES.has(control.type),
+  );
+  if (blocking.length <= 1) form.requestSubmit();
+}
+
 function keyboard(text: string): void {
   const held = new Set<Modifier>();
   const target = (): Element => document.activeElement ?? document.body;
@@ -306,17 +469,27 @@ function keyboard(text: string): void {
     }
     const element = target();
     const allowed = element.dispatchEvent(new KeyboardEvent("keydown", { ...flags(), key }));
-    if (allowed && isTextField(element) && !isDisabled(element) && !element.readOnly) {
+    if (
+      allowed &&
+      isTextField(element) &&
+      !isDisabled(element) &&
+      !element.readOnly &&
+      acceptsText(element)
+    ) {
       if (key === "Backspace") {
-        element.value = element.value.slice(0, -1);
-        dispatchInput(element, null, "deleteContentBackward");
-      } else if (key.length === 1) {
-        element.value = `${element.value}${key}`;
-        dispatchInput(element, key, "insertText");
+        edit(element, currentText(element).slice(0, -1), null, "deleteContentBackward");
+      } else if (key === "Enter") {
+        // Only a textarea has a line to break; Enter in an input submits its form (below).
+        if (element instanceof HTMLTextAreaElement && hasRoom(element)) {
+          edit(element, `${currentText(element)}\n`, null, "insertLineBreak");
+        }
+      } else if (key.length === 1 && hasRoom(element)) {
+        edit(element, `${currentText(element)}${key}`, key, "insertText");
       }
     }
-    if (allowed && (key === "Enter" || key === " ") && element instanceof HTMLButtonElement) {
-      if (!isDisabled(element)) element.click();
+    if (allowed) activateByKey(element, key);
+    if (allowed && key === "Enter" && element instanceof HTMLInputElement) {
+      if (!isDisabled(element)) implicitSubmit(element);
     }
     // This loop already dispatched the keydown; `tab()` would dispatch a second one.
     if (allowed && key === "Tab") moveFocus(held.has("Shift"));

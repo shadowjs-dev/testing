@@ -160,6 +160,67 @@ const CHECKABLE_ROLES = new Set([
   "menuitemradio",
 ]);
 
+/** The colors that are spelled the same way everywhere in CSS: the sixteen basic names, orange and transparent. */
+const NAMED_COLORS: Readonly<Record<string, string>> = {
+  black: "#000000",
+  silver: "#c0c0c0",
+  gray: "#808080",
+  grey: "#808080",
+  white: "#ffffff",
+  maroon: "#800000",
+  red: "#ff0000",
+  purple: "#800080",
+  fuchsia: "#ff00ff",
+  green: "#008000",
+  lime: "#00ff00",
+  olive: "#808000",
+  yellow: "#ffff00",
+  navy: "#000080",
+  blue: "#0000ff",
+  teal: "#008080",
+  aqua: "#00ffff",
+  orange: "#ffa500",
+};
+
+/** `#f00`, `#ff0000` or `#ff000080` as `rgb(255, 0, 0)` or `rgba(255, 0, 0, 0.5)`. */
+function hexToRgb(hex: string): string | undefined {
+  const digits =
+    hex.length === 4 || hex.length === 5 ? [...hex.slice(1)].map((d) => d + d) : undefined;
+  const pairs = digits ?? hex.slice(1).match(/../g) ?? [];
+  if (pairs.length !== 3 && pairs.length !== 4) return undefined;
+  const [red = 0, green = 0, blue = 0, alpha] = pairs.map((pair) => Number.parseInt(pair, 16));
+  if ([red, green, blue, alpha ?? 0].some((part) => Number.isNaN(part))) return undefined;
+  return alpha === undefined || alpha === 255
+    ? `rgb(${red}, ${green}, ${blue})`
+    : `rgba(${red}, ${green}, ${blue}, ${Number((alpha / 255).toFixed(3))})`;
+}
+
+/**
+ * One spelling for the values that CSS writes several ways, so `toHaveStyle("color: red")` matches an element
+ * styled `#ff0000` (a browser's computed style, and jest-dom, give both as `rgb(255, 0, 0)`): case, a color's
+ * notation (the basic names, hex, `rgb()` spacing) and a bare `0` against `0px`. The inside of `url()` is kept.
+ */
+function canonicalValue(value: string): string {
+  const parts = normalize(value).split(/(url\([^)]*\))/i);
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      return part
+        .toLowerCase()
+        .replace(/#[0-9a-f]{3,8}\b/g, (hex) => hexToRgb(hex) ?? hex)
+        .replace(/\b[a-z]+\b/g, (word) => {
+          const hex = NAMED_COLORS[word];
+          return hex === undefined ? word : (hexToRgb(hex) ?? word);
+        })
+        .replace(/rgba?\(([^)]*)\)/g, (_, inside: string) => {
+          const numbers = inside.split(/[\s,/]+/).filter((piece) => piece !== "");
+          return `${numbers.length === 4 ? "rgba" : "rgb"}(${numbers.join(", ")})`;
+        })
+        .replace(/(^|[\s,(])0(?=$|[\s,)])/g, "$10px");
+    })
+    .join("");
+}
+
 /** Converts `color` or `margin-top` from an object key such as `marginTop`. */
 const kebab = (key: string): string =>
   key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
@@ -236,7 +297,11 @@ export const matchers = {
     const element = nodeOf(actual, "toHaveValue");
     let value: string | string[] | number | null;
     if (element instanceof HTMLSelectElement && element.multiple) {
-      value = Array.from(element.selectedOptions, (option) => option.value);
+      // `selectedOptions` goes stale under happy-dom after a script changes `option.selected`;
+      // the options' own state is always current.
+      value = Array.from(element.options)
+        .filter((option) => option.selected)
+        .map((option) => option.value);
     } else if (element instanceof HTMLInputElement && element.type === "number") {
       value = element.value === "" ? null : Number(element.value);
     } else if (
@@ -315,7 +380,7 @@ export const matchers = {
     const mismatches = wanted.filter(([property, value]) => {
       const inline = element instanceof HTMLElement ? element.style.getPropertyValue(property) : "";
       const current = view?.getPropertyValue(property) || inline;
-      return normalize(current) !== normalize(value);
+      return canonicalValue(current) !== canonicalValue(value);
     });
     const pass = mismatches.length === 0;
     return {

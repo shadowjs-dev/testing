@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.5
+
+### Fixed
+
+- `toHaveValue` reads live option state instead of happy-dom's stale `selectedOptions`.
+- `toHaveStyle` compares colors in any notation, a bare `0` with `0px`, and ignores case.
+
+### Changed
+
+- `userEvent` follows the browser more closely: it honors `maxlength`; Enter in a form's text field submits it (implicit submission); Enter breaks a textarea line; Space toggles checkboxes and radios; Enter and Space open a `summary`; `type`, `keyboard` and `clear` fire a cancelable `beforeinput`; typing `-5` into a number field keeps the sign; `tab` skips hidden and inert elements. A test that pressed Enter in a form and expected nothing now sees a submit.
+
 ## 1.0.4
 
 ### Changed
