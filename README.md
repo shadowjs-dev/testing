@@ -319,10 +319,10 @@ See the [testing guide](https://shadowjs.net/guides/testing/) for a complete set
 ## Dependencies
 
 - Runtime: none.
-- Peers: `@shadow-js/core` and `@shadow-js/web` `^1.1.0`: the runtime the test helpers render with.
+- Peers: `@shadow-js/core` and `@shadow-js/web` `^1.1.1`: the runtime the test helpers render with.
 - Optional peers: `vitest` `^5.0.0` for `expect` and `afterEach` (`src/matchers.ts`, `src/auto-cleanup.ts`).
 - Optional peers: `@testing-library/dom` `^10.4.2` for accessible matchers in `@shadow-js/testing/dom`.
-- Optional peers: `@shadow-js/router` `^1.1.0` for route rendering in the `routes` entry (`src/routes.ts`).
+- Optional peers: `@shadow-js/router` `^1.1.1` for route rendering in the `routes` entry (`src/routes.ts`).
 - Optional peers: `playwright-core` `^1.50.0` (or `@playwright/test`, which includes it) for the `playwright` entry. The entry imports neither: it types the parts of `Page` it uses, so any Playwright version with those members works.
 
 ## Types
